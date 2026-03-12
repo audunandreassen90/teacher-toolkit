@@ -4,22 +4,29 @@ from datetime import date
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from supabase import create_client
 
-# ── Storage ────────────────────────────────────────────────────────────────────
-# Use absolute path so it works reliably on Streamlit Cloud
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-os.makedirs(DATA_DIR, exist_ok=True)
+# ── Storage (Supabase) ─────────────────────────────────────────────────────────
+SUPABASE_URL = "https://rsqlheptlhmfeamemvsn.supabase.co"
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
-def class_path(name):  return os.path.join(DATA_DIR, f"{name}.json")
-def list_classes():    return sorted(f[:-5] for f in os.listdir(DATA_DIR) if f.endswith(".json"))
+@st.cache_resource
+def get_db():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def list_classes():
+    res = get_db().table("classes").select("id").execute()
+    return sorted(r["id"] for r in res.data)
 
 def load_class(name):
-    p = class_path(name)
-    if not os.path.exists(p): return None
-    with open(p) as f: return json.load(f)
+    res = get_db().table("classes").select("data").eq("id", name).execute()
+    return res.data[0]["data"] if res.data else None
 
 def save_class(name, data):
-    with open(class_path(name), "w") as f: json.dump(data, f, indent=2)
+    get_db().table("classes").upsert({"id": name, "data": data}).execute()
+
+def delete_class(name):
+    get_db().table("classes").delete().eq("id", name).execute()
 
 def new_student(name):
     return {"name": name, "participation": 0, "grades": [], "notes": ""}
@@ -260,7 +267,7 @@ elif st.session_state.page == "class" and st.session_state.current_class:
         y, n = st.columns(2)
         with y:
             if st.button("Yes, delete", type="primary"):
-                os.remove(class_path(cname))
+                delete_class(cname)
                 st.session_state.confirm_del = False
                 go("home")
         with n:
